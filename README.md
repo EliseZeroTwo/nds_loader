@@ -1,8 +1,8 @@
 # About
-Nintendo DS loader module for IDA Pro 6.1
+Nintendo DS loader module for IDA Pro 7.0
 
 # Windows Installation
-Copy ***nds.ldw*** to your ***loaders*** folder.
+Copy ***nds.dll*** to your ***loaders*** folder.
 
 # Linux Installation
 - Install the IDA SDK

@@ -58,11 +58,12 @@
 
 */
 
+//#include <ida.hpp>
 #include <idaldr.h>
 #include "nds.h"
 
 //defines
-#define version "v1.14"
+#define version "v1.20"
 
 //global data
 nds_hdr hdr;
@@ -89,13 +90,9 @@ unsigned short CalcCRC16(nds_hdr *ndshdr)
 //      and fill 'fileformatname'.
 //      otherwise return 0
 //
-int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], int n)
-{
+int idaapi accept_file(qstring *fileformatname, qstring *processor, linput_t *li, const char *filename) {
 
-	ulong filelen;
-
-	if( n!= 0 )
-		return 0;
+	unsigned long filelen;
 
 	// get filesize
 	filelen = qlsize(li);
@@ -108,40 +105,41 @@ int idaapi accept_file(linput_t *li, char fileformatname[MAX_FILE_FORMAT_NAME], 
 	qlseek(li, 0, SEEK_SET);
 
 	// read whole NDS header
-	if(qlread(li, &hdr, sizeof(nds_hdr)) != sizeof(nds_hdr))
+	if (qlread(li, &hdr, sizeof(nds_hdr)) != sizeof(nds_hdr)) {
 		return 0;
+	}
 
 	// check validity of CRC16 value of header
 	// this is used to determine if this file is an NDS file
-	if (CalcCRC16(&hdr) != hdr.headerCRC16)
+	if (CalcCRC16(&hdr) != hdr.headerCRC16) {
 		return 0;
+	}
 
 	// this is the name of the file format which will be
 	// displayed in IDA's dialog
-	qstrncpy(fileformatname, "Nintendo DS ROM", MAX_FILE_FORMAT_NAME);
+	fileformatname = new qstring("Nintendo DS ROM");
 
-   // Default processor
-   set_processor_type("ARM", SETPROC_ALL);
+    // Default processor
+    set_processor_type("ARM", setproc_level_t::SETPROC_LOADER);
 
 	return (1 | ACCEPT_FIRST);
 }
+
 
 //--------------------------------------------------------------------------
 //
 //      load file into the database.
 //
-void load_file(linput_t *li, ushort /*neflag*/, const char * /*fileformatname*/)
-{
-
-   int i;
+void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
+    int i;
 	ea_t startEA;
 	ea_t endEA;
 	long offset;
 	int ARM9;
-   int found_mem_block;
-   ea_t entry_point;
+    int found_mem_block;
+    ea_t entry_point;
 
-   // go to file-offset 0
+    // go to file-offset 0
 	qlseek(li, 0, SEEK_SET);
 
 	// and read the whole header
@@ -151,7 +149,7 @@ void load_file(linput_t *li, ushort /*neflag*/, const char * /*fileformatname*/)
 	//  1 - Yes
 	//  0 - No
 	// -1 - Cancel
-	int answer = askyn_cv(1,
+	int answer = vask_yn(1,
 		"NDS Loader by Dennis Elser.\n\n"
 		"This file possibly contains ARM7 *and* ARM9 code.\n"
 		"Choose \"Yes\" to load the ARM9 executable,\n"
@@ -171,9 +169,9 @@ void load_file(linput_t *li, ushort /*neflag*/, const char * /*fileformatname*/)
 	// user chose "yes" = arm9
 	if(answer)
 	{
-		set_processor_type("ARM", SETPROC_ALL);
+		set_processor_type("ARM", setproc_level_t::SETPROC_LOADER);
 		// init
-		inf.startIP = inf.beginEA = hdr.arm9_entry_address;
+		inf.start_ip = inf.start_ea = hdr.arm9_entry_address;
 		startEA = hdr.arm9_ram_address;
 		endEA = hdr.arm9_ram_address + hdr.arm9_size;
 		offset = hdr.arm9_rom_offset;
@@ -185,11 +183,10 @@ void load_file(linput_t *li, ushort /*neflag*/, const char * /*fileformatname*/)
       }
 	}
 	// user chose "no" = arm7
-	else
-	{
-		set_processor_type("ARM710A", SETPROC_ALL);
+	else {
+		set_processor_type("ARM710A", setproc_level_t::SETPROC_LOADER);
 		// init
-		inf.startIP = inf.beginEA = hdr.arm7_entry_address;
+		inf.start_ip = inf.start_ea = hdr.arm7_entry_address;
 		startEA = hdr.arm7_ram_address;
 		endEA = hdr.arm7_ram_address + hdr.arm7_size;
 		offset = hdr.arm7_rom_offset;
@@ -236,27 +233,27 @@ void load_file(linput_t *li, ushort /*neflag*/, const char * /*fileformatname*/)
    entry_point = ARM9 == true ? hdr.arm9_entry_address : hdr.arm7_entry_address;
 
 	// add additional information about the ROM to the database
-	describe(startEA, true, ";   Created with NDS Loader %s.\n", version);
-	describe(startEA, true, ";   Author 1:           dennis@backtrace.de");
-	describe(startEA, true, ";   Author 2:           hitchhikr@australia.edu\n");
-	describe(startEA, true, ";   Game Title:         %s\n", hdr.title);
-	describe(startEA, true, ";   Processor:          ARM%c", ARM9 == true ? '9' : '7');
-	describe(startEA, true, ";   ROM Header size:    0x%08X", hdr.headerSize);
-	describe(startEA, true, ";   Header CRC:         0x%04X\n", hdr.headerCRC16);
-	describe(startEA, true, ";   Offset in ROM:      0x%08X", ARM9 == true ? hdr.arm9_rom_offset : hdr.arm7_rom_offset);
-	describe(startEA, true, ";   Array:              0x%08X - 0x%08X (%d bytes)", startEA, endEA, ARM9 == true ? hdr.arm9_size : hdr.arm7_size);
-	describe(startEA, true, ";   Entry point:        0x%08X\n", entry_point);
+    add_extra_line(startEA, true, ";   Created with NDS Loader %s.\n", version);
+	add_extra_line(startEA, true, ";   Author 1:           dennis@backtrace.de");
+	add_extra_line(startEA, true, ";   Author 2:           hitchhikr@australia.edu\n");
+	add_extra_line(startEA, true, ";   Game Title:         %s\n", hdr.title);
+	add_extra_line(startEA, true, ";   Processor:          ARM%c", ARM9 == true ? '9' : '7');
+	add_extra_line(startEA, true, ";   ROM Header size:    0x%08X", hdr.headerSize);
+	add_extra_line(startEA, true, ";   Header CRC:         0x%04X\n", hdr.headerCRC16);
+	add_extra_line(startEA, true, ";   Offset in ROM:      0x%08X", ARM9 == true ? hdr.arm9_rom_offset : hdr.arm7_rom_offset);
+	add_extra_line(startEA, true, ";   Array:              0x%08X - 0x%08X (%d bytes)", startEA, endEA, ARM9 == true ? hdr.arm9_size : hdr.arm7_size);
+	add_extra_line(startEA, true, ";   Entry point:        0x%08X\n", entry_point);
 
-	describe(startEA, true, ";   --- Beginning of ROM content ---", NULL);
+	add_extra_line(startEA, true, ";   --- Beginning of ROM content ---", NULL);
 	if(entry_point != startEA)
    {
-      describe(entry_point, true, ";   --- Entry point ---", NULL);
+		add_extra_line(entry_point, true, ";   --- Entry point ---", NULL);
 	}
-   describe(endEA, true, ";   --- End of ROM content ---", NULL);
+	add_extra_line(endEA, true, ";   --- End of ROM content ---", NULL);
    if(entry_point != BADADDR)
    {
       inf.start_cs = 0;
-      inf.startIP = entry_point;
+      inf.start_ip = entry_point;
    }
 }
 
@@ -278,7 +275,7 @@ loader_t LDSC =
 //
 //      load file into the database.
 //
-  load_file,
+  (void(__stdcall *)(linput_t *li, ushort neflags, const char *fileformatname))load_file,
 //
 //      create output file from the database.
 //      this function may be absent.
