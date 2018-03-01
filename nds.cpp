@@ -3,6 +3,7 @@
 	Written by Dennis Elser.
 	Fixed / Updated by Franck Charlet (hitchhikr@australia.edu).
 	Reupdated to 6.1 by Rodrigo Iglesias (@Areidz).
+    Updated even further to 7.0 by Prince Frizzy (theclashingfritz@gmail.com).
 
 	Comments:
 	---------
@@ -50,11 +51,14 @@
 
 	2008/07/17 version 1.13
 
-   - correctly positioned at program's entry point
-   - corrected the selection of processors
+    - correctly positioned at program's entry point
+    - corrected the selection of processors
 
-   2015/11/11 version 1.14
-   - updated sourcecode to be compatible with IDA6.1 SDK
+    2015/11/11 version 1.14
+    - updated sourcecode to be compatible with IDA6.1 SDK
+   
+    2017/03/1 version 1.20
+    - updated sourcecode to be compatible with IDA7.0 SDK
 
 */
 
@@ -73,11 +77,9 @@ nds_hdr hdr;
 //		the code of CalcCRC16() has been taken from Rafael Vuijk's "ndstool"
 //		and slightly been modified by me
 //
-unsigned short CalcCRC16(nds_hdr *ndshdr)
-{
+unsigned short CalcCRC16(nds_hdr *ndshdr) {
 	unsigned short crc16 = 0xFFFF;
-	for(int i = 0; i < 350; i++)
-	{
+	for(int i = 0; i < 350; i++) {
 		unsigned char data = *((unsigned char *) ndshdr + i);
 		crc16 = (crc16 >> 8) ^ crc16tab[(crc16 ^ data) & 0xFF];
 	}
@@ -120,7 +122,7 @@ int idaapi accept_file(qstring *fileformatname, qstring *processor, linput_t *li
 	fileformatname = new qstring("Nintendo DS ROM");
 
     // Default processor
-    set_processor_type("ARM", setproc_level_t::SETPROC_LOADER);
+    set_processor_type("ARM", setproc_level_t::SETPROC_LOADER_NON_FATAL);
 
 	return (1 | ACCEPT_FIRST);
 }
@@ -130,7 +132,7 @@ int idaapi accept_file(qstring *fileformatname, qstring *processor, linput_t *li
 //
 //      load file into the database.
 //
-void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
+void idaapi load_file(linput_t *li, ushort neflags, const char *fileformatname) {
     int i;
 	ea_t startEA;
 	ea_t endEA;
@@ -161,15 +163,13 @@ void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
 	);
 
 	// user chose "cancel" ?
-	if(answer==BADADDR)
-   {
+    if(answer==BADADDR) {
 		qexit(1);
-   }
+    }
 
 	// user chose "yes" = arm9
-	if(answer)
-	{
-		set_processor_type("ARM", setproc_level_t::SETPROC_LOADER);
+	if(answer) {
+		set_processor_type("ARM", setproc_level_t::SETPROC_LOADER_NON_FATAL);
 		// init
 		inf.start_ip = inf.start_ea = hdr.arm9_entry_address;
 		startEA = hdr.arm9_ram_address;
@@ -177,14 +177,11 @@ void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
 		offset = hdr.arm9_rom_offset;
 		ARM9 = true;
 		// sanitycheck
-		if (qlsize(li) < offset+hdr.arm9_size)
-      {
-			qexit(1);
-      }
-	}
-	// user chose "no" = arm7
-	else {
-		set_processor_type("ARM710A", setproc_level_t::SETPROC_LOADER);
+		if (qlsize(li) < offset+hdr.arm9_size) {
+			loader_failure();
+        }
+	} else { // user chose "no" = arm7
+		set_processor_type("ARM710A", setproc_level_t::SETPROC_LOADER_NON_FATAL);
 		// init
 		inf.start_ip = inf.start_ea = hdr.arm7_entry_address;
 		startEA = hdr.arm7_ram_address;
@@ -192,25 +189,22 @@ void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
 		offset = hdr.arm7_rom_offset;
 		ARM9 = false;
 		// sanitycheck
-		if(qlsize(li) < offset+hdr.arm7_size)
-      {
-			qexit(1);
-      }
+		if(qlsize(li) < offset+hdr.arm7_size) {
+			loader_failure();
+        }
 	}
 	
 	// check if segment lies within legal RAM blocks
-	found_mem_block = false;
-   for(i = 0; i < sizeof(memory) / sizeof(MEMARRAY); i++) {
-      if(startEA >= memory[i].start || endEA <= memory[i].end) 
-      {
-         found_mem_block = true;
-         break;
-      }
-   }
-   if(!found_mem_block)
-   {
-	   qexit(1);
-   }
+    found_mem_block = false;
+    for(i = 0; i < sizeof(memory) / sizeof(MEMARRAY); i++) {
+      if(startEA >= memory[i].start || endEA <= memory[i].end)  {
+            found_mem_block = true;
+            break;
+       }
+    }
+    if(!found_mem_block) {
+		loader_failure();
+    }
 
 	// map selector
 	set_selector(1, 0);
@@ -218,19 +212,18 @@ void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
 
 	// create a segment for the legal RAM blocks
 	for(i = 0; i < sizeof(memory) / sizeof(MEMARRAY); i++) {
-	   if (!add_segm(1, memory[i].start, memory[i].end, "RAM", CLASS_CODE))
-      {
-		   qexit(1);
-      }
-   }
+        if (!add_segm(1, memory[i].start, memory[i].end, "RAM", CLASS_CODE)) {
+			loader_failure();
+        }
+    }
 
 	// enable 32bit addressing
-	set_segm_addressing(getseg( startEA ), 1);
+	set_segm_addressing(getseg(startEA), 1);
 
 	// load file into RAM area
 	file2base(li, offset, startEA, endEA, FILEREG_PATCHABLE);
 	
-   entry_point = ARM9 == true ? hdr.arm9_entry_address : hdr.arm7_entry_address;
+    entry_point = ARM9 == true ? hdr.arm9_entry_address : hdr.arm7_entry_address;
 
 	// add additional information about the ROM to the database
     add_extra_line(startEA, true, ";   Created with NDS Loader %s.\n", version);
@@ -245,16 +238,14 @@ void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
 	add_extra_line(startEA, true, ";   Entry point:        0x%08X\n", entry_point);
 
 	add_extra_line(startEA, true, ";   --- Beginning of ROM content ---", NULL);
-	if(entry_point != startEA)
-   {
+	if(entry_point != startEA) {
 		add_extra_line(entry_point, true, ";   --- Entry point ---", NULL);
 	}
 	add_extra_line(endEA, true, ";   --- End of ROM content ---", NULL);
-   if(entry_point != BADADDR)
-   {
-      inf.start_cs = 0;
-      inf.start_ip = entry_point;
-   }
+    if(entry_point != BADADDR) {
+        inf.start_cs = 0;
+        inf.start_ip = entry_point;
+    }
 }
 
 //----------------------------------------------------------------------
@@ -262,25 +253,24 @@ void load_file(linput_t *li, ushort neflags, const char *fileformatname) {
 //      LOADER DESCRIPTION BLOCK
 //
 //----------------------------------------------------------------------
-loader_t LDSC =
-{
-  IDP_INTERFACE_VERSION,
-  0,                            // loader flags
+loader_t LDSC = {
+    IDP_INTERFACE_VERSION,
+    0,                            // loader flags
 //
 //      check input file format. if recognized, then return 1
 //      and fill 'fileformatname'.
 //      otherwise return 0
 //
-  accept_file,
+    accept_file,
 //
 //      load file into the database.
 //
-  (void(__stdcall *)(linput_t *li, ushort neflags, const char *fileformatname))load_file,
+    load_file,
 //
 //      create output file from the database.
 //      this function may be absent.
 //
-  NULL,
-  NULL,
-  NULL,
+    NULL,
+    NULL,
+    NULL,
 };
