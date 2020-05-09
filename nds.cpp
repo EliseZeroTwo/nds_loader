@@ -93,7 +93,6 @@ unsigned short CalcCRC16(nds_hdr *ndshdr) {
 //      otherwise return 0
 //
 int idaapi accept_file(qstring *fileformatname, qstring *processor, linput_t *li, const char *filename) {
-
 	unsigned long filelen;
 
 	// get filesize
@@ -119,10 +118,11 @@ int idaapi accept_file(qstring *fileformatname, qstring *processor, linput_t *li
 
 	// this is the name of the file format which will be
 	// displayed in IDA's dialog
-	fileformatname = new qstring("Nintendo DS ROM");
+	*fileformatname = "Nintendo DS ROM";
+	*processor = "arm";
 
     // Default processor
-    set_processor_type("ARM", setproc_level_t::SETPROC_LOADER_NON_FATAL);
+    
 
 	return (1 | ACCEPT_FIRST);
 }
